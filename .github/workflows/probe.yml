@@ -1,0 +1,47 @@
+name: probe
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+permissions:
+  contents: write
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg mkvtoolnix
+          python3 -m pip install -U --quiet yt-dlp
+          yt-dlp --version
+      - name: Probe youtube
+        continue-on-error: true
+        run: |
+          URL="https://www.youtube.com/watch?v=HwAPLk_sQ3w"
+          { echo "######## DEFAULT ########"
+            yt-dlp -F "$URL" 2>&1 | head -300
+            echo "-----SUBS-----"
+            yt-dlp --list-subs "$URL" 2>&1 | head -150
+          } > probe.txt
+          for CLIENT in tv_embedded web_safari android_vr ios tv mweb; do
+            { echo ""
+              echo "######## CLIENT=$CLIENT ########"
+              yt-dlp --extractor-args "youtube:player_client=$CLIENT" -F "$URL" 2>&1 | head -300
+              echo "-----SUBS-----"
+              yt-dlp --extractor-args "youtube:player_client=$CLIENT" --list-subs "$URL" 2>&1 | head -150
+            } >> probe.txt
+          done
+          yt-dlp --skip-download -J "$URL" > meta.json 2> meta.err || true
+          echo "-----JSON-ERR-----" >> probe.txt
+          head -c 3000 meta.err >> probe.txt
+          ls -la probe.txt meta.json || true
+      - name: Publish probe
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ls -la
+          gh release create probe --title probe --notes "probe" probe.txt meta.json --clobber || true
