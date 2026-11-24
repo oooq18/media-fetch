@@ -1,0 +1,43 @@
+name: wtest
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+jobs:
+  w:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Worker test
+        continue-on-error: true
+        run: |
+          echo "=== default target ==="
+          curl -s -m 30 "https://yttest.lca313.workers.dev/" | head -c 800; echo
+          echo "=== control ==="
+          curl -s -m 30 "https://yttest.lca313.workers.dev/?u=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3Daqz-KE-bpKQ%26hl%3Den" | head -c 800; echo
+      - name: Invidious fixed list
+        continue-on-error: true
+        run: |
+          ID=HwAPLk_sQ3w
+          for H in yewtu.be inv.nadeko.net invidious.nerdvpn.de invidious.f5.si invidious.privacyredirect.com iv.melmac.space invidious.jing.rocks invidious.reallyaweso.me invidious.protokolla.fi yt.artemislena.eu invidious.private.coffee invidious.loma.ml iv.datura.network invidious.effect.zone invidious.materialio.us invidious.exonip.de; do
+            printf "%-32s " "$H"
+            code=$(curl -s -m 12 -o r.json -w "%{http_code}" "https://$H/api/v1/videos/$ID?fields=title,author,lengthSeconds,adaptiveFormats,captions" 2>/dev/null)
+            echo -n "http=$code "
+            jq -r '[.title,.author,(.lengthSeconds|tostring),(.adaptiveFormats|length|tostring)]|@tsv' r.json 2>/dev/null | head -1 || head -c 80 r.json
+            echo
+          done
+      - name: Piped fixed list
+        continue-on-error: true
+        run: |
+          ID=HwAPLk_sQ3w
+          for P in https://pipedapi.kavin.rocks https://pipedapi.adminforge.de https://api.piped.private.coffee https://pipedapi.reallyaweso.me https://pipedapi.drgns.space https://pipedapi.leptons.xyz https://pipedapi.darkness.services; do
+            printf "%-40s " "$P"
+            code=$(curl -s -m 12 -o s.json -w "%{http_code}" "$P/streams/$ID" 2>/dev/null)
+            echo -n "http=$code "
+            jq -r '[.title,.uploader,(.duration|tostring),(.audioStreams|length|tostring),(.videoStreams|length|tostring)]|@tsv' s.json 2>/dev/null | head -1 || head -c 80 s.json
+            echo
+          done
+      - name: Done
+        if: always()
+        run: echo done
