@@ -1,0 +1,65 @@
+name: solve
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+jobs:
+  solve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg mkvtoolnix jq
+          python3 -m pip install -U --quiet yt-dlp bgutil-ytdlp-pot-provider
+          yt-dlp --version
+          curl -fsSL https://deno.land/install.sh | sh -s -- -y
+          echo "$HOME/.deno/bin" >> $GITHUB_PATH
+      - name: POT provider
+        run: |
+          docker run --name bgutil-provider -d --init -p 127.0.0.1:4416:4416 brainicism/bgutil-ytdlp-pot-provider
+          sleep 20
+          docker ps
+          curl -s -m 10 "http://127.0.0.1:4416/get_pot" | head -c 300 || true
+      - name: Probe clients
+        continue-on-error: true
+        run: |
+          export PATH="$HOME/.deno/bin:$PATH"
+          URL="https://www.youtube.com/watch?v=HwAPLk_sQ3w"
+          : > out.txt
+          for C in web web_safari tv mweb ios android_vr; do
+            echo "######## CLIENT=$C ########" >> out.txt
+            yt-dlp --js-runtimes deno \
+              --extractor-args "youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416" \
+              --extractor-args "youtube:player_client=$C" \
+              -F "$URL" >> out.txt 2>&1 || true
+            echo "-----SUBS $C-----" >> out.txt
+            yt-dlp --js-runtimes deno \
+              --extractor-args "youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416" \
+              --extractor-args "youtube:player_client=$C" \
+              --list-subs "$URL" >> out.txt 2>&1 || true
+            echo "" >> out.txt
+          done
+          yt-dlp --js-runtimes deno \
+            --extractor-args "youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416" \
+            --extractor-args "youtube:player_client=web,tv" \
+            --skip-download -J "$URL" > meta.json 2>meta.err || true
+          ls -la out.txt meta.json meta.err
+      - name: Dump
+        if: always()
+        run: |
+          echo "################ BEGIN ################"
+          cat out.txt || true
+          echo "################ END ################"
+          echo "################ METAERR ################"
+          cat meta.err || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: solve
+          path: |
+            out.txt
+            meta.json
+            meta.err
